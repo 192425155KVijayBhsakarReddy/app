@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Disaster Response Coordination Portal</title>
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <style>
+    /* ========== EMBEDDED CSS ========== */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --primary-bg: #181c24;
+      --sidebar-bg: #202640;
+      --main-bg: #23293a;
+      --panel-bg: #252a3a;
+      --accent: #29e6a7;
+      --alert: #f44336;
+      --text-main: #cff2ff;
+      --text-subtle: #8898b2;
+      --header-bg: #171a23;
+      --btn-bg: #181e2b;
+      --highlight: #23c4ed;
+      --team-free: #29e6a7;
+      --team-deployed: #e6b029;
+      --border-color: #34415a;
+      --shadow-color: rgba(41, 230, 167, 0.2);
+    }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      background: var(--primary-bg); color: var(--text-main);
+      font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.4;
+    }
+    #header {
+      width: 100vw; background: var(--header-bg);
+      display: flex; align-items: center;
+      justify-content: space-between;
+      padding: 12px 30px;
+      border-bottom: 2px solid var(--accent);
+      z-index: 1000; position: relative;
+      height: 56px;
+    }
+    .header-title { font-size: 1.5em; font-weight: 700; }
+    .header-subtitle { font-size: 1em; color: var(--highlight); opacity: 0.95; }
+    #alert-bar {
+      position: absolute; top: 0; left: 0; width: 100vw;
+      background: var(--alert); color: #fff; font-weight: bold; text-align: center;
+      padding: 8px 0; display: none; font-size: 1.2em;
+      animation: alertBlink 1s infinite alternate; z-index: 9999;
+    }
+    @keyframes alertBlink { 0% {opacity:.8;} 100% {opacity:1;} }
+    #container {
+      display: flex; flex-direction: row;
+      height: calc(100vh - 56px);
+      width: 100vw; overflow: hidden;
+    }
+    #sidebar {
+      background: var(--sidebar-bg); width: 350px; min-width: 180px; max-width: 500px;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      border-right: 2px solid var(--highlight);
+      z-index: 100; position: relative; height: 100%;
+      transition: width 0.3s ease;
+    }
+    #sidebar.collapsed { width: 80px; min-width: 60px; }
+    .toggle-btn {
+      background: var(--btn-bg); color: var(--accent); border: none;
+      cursor: pointer; font-size: 1.6em;
+      width: 100%; padding: 8px;
+      text-align: left; outline: none;
+      transition: background-color 0.2s ease;
+    }
+    .toggle-btn:hover, .toggle-btn:focus {
+      background-color: var(--accent); color: var(--primary-bg);
+    }
+    #sidebar.collapsed .toggle-btn { font-size: 2.2em; text-align: center; }
+    #sidebar-content { flex: 1; overflow-y: auto; padding: 0 12px;}
+    #sidebar-resizer {
+      width: 7px; cursor: ew-resize;
+      background: linear-gradient(90deg, transparent 0%, var(--accent) 80%);
+      height: 100%; position: absolute; top: 0; right: 0;
+      z-index: 250; opacity: 0.3; transition: opacity 0.2s ease;
+    }
+    #sidebar-resizer:hover { opacity: 0.8; }
+    #main {
+      background: var(--main-bg); flex: 1;
+      display: flex; flex-direction: column;
+      overflow: hidden; min-width: 0;
+    }
+    #map-section {
+      flex: 1.5; display: flex; align-items: stretch;
+      min-height: 320px; min-width: 0;
+    }
+    #map {
+      height: 100%; width: 100%;
+      border: 2px solid var(--accent); border-radius: 12px;
+      margin: 14px; box-shadow: 0 0 12px 2px var(--shadow-color);
+      min-width: 200px; min-height: 160px; background: var(--main-bg);
+    }
+    #charts-section {
+      flex: 1; display: flex; flex-direction: row;
+      justify-content: space-around; align-items: stretch;
+      padding: 10px 14px; gap: 24px; background: var(--panel-bg);
+      margin: 0 14px 14px 14px; border-radius: 12px;
+      box-shadow: 0 0 8px var(--shadow-color); min-width: 0;
+    }
+    .chart-box {
+      background: var(--main-bg); padding: 18px 12px; border-radius: 10px;
+      box-shadow: 0 0 8px rgba(35,196,237,.2); width: 100%; min-width: 220px;
+      max-width: 420px; height: 320px; display: flex; flex-direction: column;
+      align-items: center; justify-content: flex-start;
+    }
+    .chart-title {
+      color: var(--text-subtle); font-size: 1.05em;
+      margin-bottom: 8px; font-weight: bold; text-align: center;
+      letter-spacing: 1.2px;
+    }
+    canvas { background: var(--panel-bg); border-radius: 8px; }
+    table {
+      width: 100%; border-collapse: collapse; background: var(--panel-bg);
+      color: var(--text-main); margin-bottom: 12px; font-size: 0.9em;
+      border-radius: 6px; overflow: hidden;
+    }
+    th, td { padding: 8px; text-align: center; border-bottom: 1px solid var(--border-color);}
+    th {
+      background: var(--sidebar-bg); color: var(--accent); border-bottom: 2px solid var(--highlight);
+      font-weight: bold; font-size: 0.95em;
+    }
+    tbody tr:hover { background: rgba(35,50,61,0.4);}
+    tbody tr:nth-child(even) { background: rgba(0,0,0,0.1);}
+    .btn {
+      background: var(--btn-bg); color: var(--accent); border: 1px solid var(--accent);
+      border-radius: 6px; padding: 6px 12px; margin: 2px 4px;
+      cursor: pointer; font-weight: 600; font-size: 0.9em;
+      transition: all 0.2s ease; outline: none;
+    }
+    .btn:hover, .btn:focus {
+      background: var(--accent); color: var(--primary-bg);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .btn:active { transform: translateY(0);}
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none;}
+    .team-free { color: var(--team-free); font-weight: bold;}
+    .team-deployed { color: var(--team-deployed); font-weight: bold;}
+    .input-group {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .input-group input, .input-group select {
+      background: var(--panel-bg); color: var(--text-main);
+      border: 1px solid var(--accent); border-radius: 4px;
+      padding: 6px 10px; outline: none; font-size: 0.9em; min-width: 120px;
+      transition: border-color 0.2s ease;
+    }
+    .input-group input:focus, .input-group select:focus {
+      border-color: var(--highlight);
+      box-shadow: 0 0 0 2px rgba(35,196,237,0.2);
+    }
+    .input-group input::placeholder { color: var(--text-subtle);}
+    #log-panel {
+      background: var(--panel-bg); color: var(--text-main);
+      height: 120px; overflow-y: auto; padding: 10px;
+      border-radius: 8px; font-size: 0.85em; margin-bottom: 8px;
+      border: 1px solid var(--accent); box-shadow: 0 0 8px rgba(41,230,167,0.15);
+      line-height: 1.4;
+    }
+    .log-entry {
+      border-bottom: 1px solid rgba(52,65,90,0.3); padding: 4px 0; word-wrap: break-word;
+    }
+    .log-entry:last-child { border-bottom: none; }
+  </style>
+</head>
+<body>
+  <audio id="alert-audio" preload="none">
+    <source src="https://cdn.pixabay.com/audio/2022/08/04/audio_12cbe1577b.mp3" type="audio/mpeg" />
+    Your browser does not support the audio element.
+  </audio>
+  <header id="header">
+    <div class="header-title">Disaster Response Coordination Portal</div>
+    <div class="header-subtitle">Andhra Pradesh Rescue Command Center</div>
+  </header>
+  <div id="alert-bar" role="alert" aria-live="assertive"></div>
+  <main id="container">
+    <aside id="sidebar">
+      <button class="toggle-btn" onclick="DisasterApp.toggleSidebar()" aria-label="Toggle sidebar">☰</button>
+      <div id="sidebar-content">
+        <section class="sidebar-section">
+          <h3>Resources</h3>
+          <table id="resource-table"><thead></thead><tbody></tbody></table>
+        </section>
+        <section class="sidebar-section">
+          <h3>Teams</h3>
+          <table id="teams-table"><thead></thead><tbody></tbody></table>
+          <div class="input-group">
+            <input id="new-team-name" type="text" placeholder="Team Name" maxlength="50" aria-label="New team name"/>
+            <button class="btn" onclick="DisasterApp.addTeamManually()" aria-label="Add new team">Add Team</button>
+          </div>
+        </section>
+        <section class="sidebar-section">
+          <h3>Deployments</h3>
+          <table id="deployments-table"><thead></thead><tbody></tbody></table>
+          <div class="input-group">
+            <select id="manual-team" aria-label="Select team"></select>
+            <select id="manual-zone" aria-label="Select deployment zone"></select>
+            <button class="btn" onclick="DisasterApp.manualDeploy()" aria-label="Deploy">Deploy</button>
+          </div>
+        </section>
+        <section class="sidebar-section">
+          <h3>Incidents</h3>
+          <table id="incidents-table"><thead></thead><tbody></tbody></table>
+        </section>
+        <section class="sidebar-section">
+          <h3>Action Logs</h3>
+          <div id="log-panel"></div>
+        </section>
+      </div>
+      <div id="sidebar-resizer"></div>
+    </aside>
+    <div id="main">
+      <section id="map-section">
+        <div id="map"></div>
+      </section>
+      <section id="charts-section">
+        <div class="chart-box">
+          <div class="chart-title">Resource Allocation</div>
+          <canvas id="resources-chart"></canvas>
+        </div>
+        <div class="chart-box">
+          <div class="chart-title">Zone Severity Levels</div>
+          <canvas id="severity-chart"></canvas>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+  <script>
+    // Disaster Response Portal: JS modular with all error fixes
+    const DisasterApp = (() => {
+      "use strict";
+      let resources, teams, deployments, incidents, logs, zonesSeverity;
+      let resourcesChart, severityChart, map, zoneMarkers = [], heatLayer;
+      let incidentInterval, alertActive = false;
+      const INIT_RESOURCES = [
+        { name: "Water", total: 3000, used: 0 }, { name: "Medical Kits", total: 3000, used: 0 },
+        { name: "Food", total: 3000, used: 0 }, { name: "Blankets", total: 3000, used: 0 },
+        { name: "Oxygen", total: 3000, used: 0 }, { name: "Rescue Tools", total: 3000, used: 0 },
+      ];
+      const INCIDENT_TYPES = [
+        { type: "Fire", color: "#f44336", needs: ["Water", "Rescue Tools", "Oxygen"] },
+        { type: "Flood", color: "#29b6f6", needs: ["Water", "Food", "Blankets", "Medical Kits"] },
+        { type: "Earthquake", color: "#ffea00", needs: ["Medical Kits", "Blankets", "Rescue Tools", "Oxygen"] },
+        { type: "Accident", color: "#ff9100", needs: ["Medical Kits", "Oxygen", "Rescue Tools"] },
+      ];
+      const ZONES = [
+        { name: "Vizag Zone", coords: [17.6868, 83.2185] },
+        { name: "Kurnool Zone", coords: [15.8345, 78.0350] },
+        { name: "Hyderabad Zone", coords: [17.3850, 78.4867] },
+        { name: "Chennai Zone", coords: [13.0827, 80.2707] },
+        { name: "Bangalore Zone", coords: [12.9716, 77.5946] },
+        { name: "Mumbai Zone", coords: [19.0760, 72.8777] },
+        { name: "Delhi Zone", coords: [28.6139, 77.2090] },
+        { name: "Kolkata Zone", coords: [22.5726, 88.3639] },
+        { name: "Jaipur Zone", coords: [26.9124, 75.7873] },
+        { name: "Patna Zone", coords: [25.5941, 85.1376] },
+      ];
+      function safeStorage(fn, def) { try{return fn();}catch(e){console.error("localStorage error",e);return def;} }
+      function log(msg) {
+        logs.push(msg + " [" + new Date().toLocaleTimeString() + "]");
+        if(logs.length > 200) logs = logs.slice(-100);
+      }
+      function sanitize(str) {
+        const div = document.createElement("div");
+        div.textContent = str;
+        return div.innerHTML;
+      }
+      function $(id) { return document.getElementById(id);}
+      function loadState() {
+        resources = safeStorage(()=>JSON.parse(localStorage.getItem("resources")),JSON.parse(JSON.stringify(INIT_RESOURCES)));
+        teams = safeStorage(() => JSON.parse(localStorage.getItem("teams")), Array.from({length:20}, (_,i)=>({
+          name: `Team ${i+1}`, status:"Free", zone:"HQ", id:`T${i+1}`
+        })));
+        deployments = safeStorage(() => JSON.parse(localStorage.getItem("deployments")), []);
+        incidents = safeStorage(() => JSON.parse(localStorage.getItem("incidents")), []);
+        logs = safeStorage(() => JSON.parse(localStorage.getItem("logs")), []);
+        zonesSeverity = safeStorage(() => JSON.parse(localStorage.getItem("zonesSeverity")), {});
+      }
+      function saveState() {
+        safeStorage(() => localStorage.setItem("resources", JSON.stringify(resources)));
+        safeStorage(() => localStorage.setItem("teams", JSON.stringify(teams)));
+        safeStorage(() => localStorage.setItem("deployments", JSON.stringify(deployments)));
+        safeStorage(() => localStorage.setItem("incidents", JSON.stringify(incidents)));
+        safeStorage(() => localStorage.setItem("logs", JSON.stringify(logs)));
+        safeStorage(() => localStorage.setItem("zonesSeverity", JSON.stringify(zonesSeverity)));
+      }
+      function renderResourcesTable() {
+        const t = $("resource-table"); if(!t) return;
+        let html=`<thead><tr>
+          <th>Resource</th><th>Total</th><th>Used</th><th>Available</th><th>Actions</th>
+        </tr></thead><tbody>`;
+        resources.forEach((r,i)=>{
+          html+=`<tr>
+            <td>${sanitize(r.name)}</td><td>${r.total}</td><td>${r.used}</td><td>${r.total-r.used}</td>
+            <td><button class="btn" onclick="DisasterApp.changeResource(${i},100)">+100</button>
+                <button class="btn" onclick="DisasterApp.changeResource(${i},-100)">-100</button></td>
+          </tr>`;
+        });
+        html+="</tbody>";
+        t.innerHTML=html;
+      }
+      function renderTeamsTable() {
+        const t = $("teams-table"); if(!t) return;
+        let html=`<thead><tr><th>Team</th><th>Status</th><th>Current Zone</th></tr></thead><tbody>`;
+        teams.forEach(team=>{
+          html+=`<tr>
+            <td>${sanitize(team.name)}</td>
+            <td class="${team.status==='Free'?'team-free':'team-deployed'}">${team.status}</td>
+            <td>${sanitize(team.zone)}</td>
+          </tr>`;
+        });
+        html+="</tbody>"; t.innerHTML=html;
+        const manualTeamSel=$("manual-team"), manualZoneSel=$("manual-zone");
+        if(manualTeamSel){
+          let freeTeams=teams.filter(t=>t.status==="Free");
+          manualTeamSel.innerHTML=freeTeams.map(t=>`<option value="${t.id}">${sanitize(t.name)}</option>`).join('');
+          if(freeTeams.length==0) manualTeamSel.innerHTML=`<option>No Free Teams</option>`;
+        }
+        if(manualZoneSel) manualZoneSel.innerHTML=ZONES.map(z=>`<option value="${z.name}">${sanitize(z.name)}</option>`).join('');
+      }
+      function renderDeploymentsTable() {
+        const t = $("deployments-table"); if(!t) return;
+        let html=`<thead><tr><th>Team</th><th>Zone</th><th>Severity</th><th>Resources Used</th><th>Status</th></tr></thead><tbody>`;
+        deployments.slice().reverse().slice(0,10).forEach(dep=>{
+          html+=`<tr>
+            <td>${sanitize(dep.team)}</td>
+            <td>${sanitize(dep.zone)}</td>
+            <td>${dep.severity}</td>
+            <td>${Object.entries(dep.resourcesUsed).map(([r,q])=>`${sanitize(r)}: ${q}`).join(', ')}</td>
+            <td class="${dep.status==='Completed'?'team-free':'team-deployed'}">${dep.status}</td>
+          </tr>`;
+        });
+        html+="</tbody>"; t.innerHTML=html;
+      }
+      function renderIncidentsTable() {
+        const t = $("incidents-table"); if(!t) return;
+        let html=`<thead><tr><th>Zone</th><th>Type</th><th>Severity</th><th>Needed</th><th>Assigned Team</th></tr></thead><tbody>`;
+        incidents.slice().reverse().slice(0,12).forEach(inc=>{
+          html+=`<tr>
+            <td>${sanitize(inc.zone)}</td>
+            <td style="color:${INCIDENT_TYPES.find(t=>t.type==inc.type)?.color};font-weight:600;">${sanitize(inc.type)}</td>
+            <td>${inc.severity}</td>
+            <td>${Object.entries(inc.resourcesNeeded).map(([r,q])=>`${sanitize(r)}: ${q}`).join(', ')}</td>
+            <td class="${inc.team?'team-deployed':'team-free'}">${inc.team?sanitize(inc.team):"-"}</td>
+          </tr>`;
+        });
+        html+="</tbody>"; t.innerHTML=html;
+      }
+      function renderLogPanel() {
+        const el = $("log-panel"); if(!el) return;
+        el.innerHTML = logs.slice().reverse().slice(0,25).map(log=>
+          `<div class="log-entry">${sanitize(log)}</div>`
+        ).join('');
+      }
+      function renderCharts() {
+        const resNames=resources.map(r=>r.name);
+        const used=resources.map(r=>r.used);
+        const available=resources.map(r=>r.total-r.used);
+        const rc=$("resources-chart");
+        if(rc){
+          if(!resourcesChart){
+            resourcesChart = new Chart(rc.getContext('2d'), {
+              type: 'bar',
+              data: { labels: resNames, datasets: [
+                { label: "Used", backgroundColor: '#f44336cc', data: used },
+                { label: "Available", backgroundColor: '#29e6a7cc', data: available }
+              ] },
+              options:{ responsive:true, plugins:{ legend:{labels:{color:"#cff2ff"}} },
+                scales:{ x:{ticks:{color:"#cff2ff"},grid:{display:false}},
+                  y:{ticks:{color:"#cff2ff"},grid:{color:'#34415a66'}} } }
+            });
+          } else {
+            resourcesChart.data.datasets[0].data=used;
+            resourcesChart.data.datasets[1].data=available;
+            resourcesChart.update();
+          }
+        }
+        const sevNames=ZONES.map(z=>z.name), sevLevels=sevNames.map(z=>zonesSeverity[z]||0);
+        const sc=$("severity-chart");
+        if(sc){
+          if(!severityChart){
+            severityChart = new Chart(sc.getContext('2d'), {
+              type: 'bar', data: { labels: sevNames,
+                datasets: [{
+                  label: "Severity",
+                  backgroundColor: sevLevels.map(s=>s>=4?'#f44336cc':s>=2?'#ffd600cc':'#29e6a7cc'),
+                  data: sevLevels
+                }]
+              },
+              options: { responsive:true, plugins:{ legend:{display:false} },
+                scales:{ x:{ticks:{color:"#cff2ff"},grid:{display:false}},
+                  y:{ticks:{color:"#cff2ff"},grid:{color:'#34415a44'},max:5,min:0} }
+              }
+            });
+          } else {
+            severityChart.data.datasets[0].data=sevLevels;
+            severityChart.data.datasets[0].backgroundColor=sevLevels.map(s=>s>=4?'#f44336cc':s>=2?'#ffd600cc':'#29e6a7cc');
+            severityChart.update();
+          }
+        }
+      }
+      function renderMap() {
+        if(!$("map")) return;
+        if(!map){
+          map = L.map('map',{zoomControl:true,attributionControl:false}).setView([20.5937, 78.9629], 5);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,minZoom:4}).addTo(map);
+          setTimeout(()=>{map.invalidateSize();},300);
+        }
+        zoneMarkers.forEach(m=>map.removeLayer(m));
+        zoneMarkers=[];
+        let heatData=[];
+        ZONES.forEach(zone=>{
+          let sev=zonesSeverity[zone.name]||1;
+          let color=sev>=4?"#f44336":sev>=2?"#ffd600":"#29e6a7";
+          let marker=L.circleMarker(zone.coords,
+            {radius:16,color,fillColor:color,fillOpacity:0.47,weight:3,dashArray:"3 5"}
+          ).addTo(map)
+            .bindPopup(`<b>${sanitize(zone.name)}</b><br>Severity: ${sev}<br>Incident: ${
+              sanitize(incidents.filter(inc=>inc.zone===zone.name).slice(-1)[0]?.type||"None")
+            }`);
+          zoneMarkers.push(marker);
+          heatData.push([...zone.coords,sev/5]);
+        });
+        if(heatLayer) map.removeLayer(heatLayer);
+        heatLayer=L.heatLayer(heatData,{radius:35,blur:42,gradient:{
+          0.0:'#181c24',0.22:'#29e6a7',0.55:'#ffd600',0.85:'#f44336'
+        }}).addTo(map);
+        setTimeout(()=>{if(map)map.invalidateSize();},130);
+      }
+      function saveAndRender() {
+        saveState(); renderResourcesTable();
+        renderTeamsTable(); renderDeploymentsTable();
+        renderIncidentsTable(); renderLogPanel();
+        renderCharts(); renderMap();
+      }
+      function changeResource(idx,delta){
+        if(typeof idx!=='number'||!resources[idx])return;
+        let r=resources[idx],available=r.total-r.used;
+        if(delta<0&&available+delta<0)return;
+        r.total+=delta;
+        if(r.used>r.total)r.used=r.total;
+        log(`Resource "${sanitize(r.name)}" adjusted by ${delta>0?'+':'-'}${Math.abs(delta)} units.`);
+        saveAndRender();
+      }
+      function addTeamManually(){
+        const nameInput=$("new-team-name");
+        if(!nameInput)return;
+        const name=sanitize(nameInput.value.trim());
+        if(!name||name.length<2)return;
+        let id=`T${Math.floor(Math.random()*100000)}`;
+        teams.push({name,status:"Free",zone:"HQ",id});
+        log(`New team "${name}" added manually.`);
+        saveAndRender(); nameInput.value="";
+      }
+      function manualDeploy(){
+        const manualTeamSel=$("manual-team"),manualZoneSel=$("manual-zone");
+        if(!manualTeamSel||!manualZoneSel)return;
+        const teamId=manualTeamSel.value,zoneName=manualZoneSel.value;
+        const team=teams.find(t=>t.id===teamId); if(!team||team.status!=="Free")return;
+        autoDeploy(team,zoneName,null);
+      }
+      function randomIncident() {
+        let zoneIdx=Math.floor(Math.random()*ZONES.length);
+        let zone=ZONES[zoneIdx];
+        let typeData=INCIDENT_TYPES[Math.floor(Math.random()*INCIDENT_TYPES.length)];
+        let severity=Math.max(1,Math.floor(Math.random()*5)+1),resourcesNeeded={};
+        typeData.needs.forEach(r=>{
+          let qty=300+Math.floor(Math.random()*150)*severity;
+          resourcesNeeded[r]=qty;
+        });
+        const inc={ zone:zone.name,type:typeData.type,severity,resourcesNeeded,team:null,created:+new Date(),
+          completed:null,id:"INC"+Math.floor(Math.random()*10000000)
+        };
+        incidents.push(inc); zonesSeverity[zone.name]=severity;
+        log(`Incident created: ${inc.type} in ${zone.name} (Severity ${severity}).`);
+        saveAndRender(); autoAssignIncident(inc);
+      }
+      function autoAssignIncident(inc){
+        let team=teams.find(t=>t.status==="Free");
+        if(!team){triggerAlert("No free rescue team available for deployment!");return;}
+        for(let r in inc.resourcesNeeded){
+          let i=resources.findIndex(x=>x.name===r);
+          if(resources[i].total-resources[i].used<inc.resourcesNeeded[r]){
+            triggerAlert(`Insufficient ${sanitize(r)} for incident in ${sanitize(inc.zone)}!`);
+            return;
+          }
+        }
+        autoDeploy(team,inc.zone,inc);
+      }
+      function autoDeploy(team,zoneName,incident){
+        if(team.status!=="Free")return;
+        const severity=incident?incident.severity:Math.max(1,(zonesSeverity[zoneName]||1));
+        let resourcesUsed={};
+        if(incident){
+          for(let r in incident.resourcesNeeded){
+            let i=resources.findIndex(x=>x.name===r);
+            resources[i].used+=incident.resourcesNeeded[r];
+            resourcesUsed[r]=incident.resourcesNeeded[r];
+          }
+          incident.team=team.name;
+          log(`Team "${sanitize(team.name)}" auto-deployed to ${sanitize(zoneName)} for ${sanitize(incident.type)} (Severity ${incident.severity}).`);
+        }else{
+          resources.forEach((r,i)=>{
+            let qty=200+Math.floor(Math.random()*70)*severity;
+            resources[i].used+=qty; resourcesUsed[r.name]=qty;
+          });
+          log(`Team "${sanitize(team.name)}" manually deployed to ${sanitize(zoneName)}.`);
+          let inc=incidents.find(x=>x.zone===zoneName&&!x.team);
+          if(inc){inc.team=team.name;}
+        }
+        team.status="Deployed"; team.zone=zoneName;
+        deployments.push({
+          team:team.name,zone:zoneName,severity,resourcesUsed,
+          status:"Ongoing",started:+new Date(),completed:null,teamId:team.id,
+          incidentId:incident?.id,progress:0
+        });
+        saveAndRender();
+      }
+      function triggerAlert(msg){
+        if(alertActive)return;
+        alertActive=true;
+        const el=$("alert-bar");
+        if(el){ el.style.display="block"; el.textContent="ALERT: "+sanitize(msg);}
+        const audio=$("alert-audio");
+        if(audio){
+          const playPromise=audio.play();
+          if(playPromise!==undefined){ playPromise.catch(e=>log("Audio play failed: "+e)); }
+        }
+        setTimeout(()=>{
+          if(el)el.style.display="none";
+          alertActive=false;
+        },3500);
+      }
+      function toggleSidebar(){
+        const sb=$("sidebar"); if(!sb)return;
+        sb.classList.toggle("collapsed");
+        const sc=$("sidebar-content");
+        if(sc)sc.style.display=sb.classList.contains("collapsed")?"none":"block";
+        setTimeout(()=>{ if(window.map) map.invalidateSize(); },240);
+      }
+      function initDragSidebarResizer(){
+        const sidebar=$("sidebar"),resizer=$("sidebar-resizer");
+        if(!sidebar||!resizer)return;
+        let isDragging=false,lastPageX,lastWidth;
+        function mouseMoveHandler(e){
+          if(!isDragging)return;
+          let dx=e.pageX-lastPageX,newWidth=lastWidth+dx;
+          if(window.innerWidth<600)newWidth=Math.max(80,newWidth);
+          else newWidth=Math.max(180,Math.min(500,newWidth));
+          sidebar.style.width=newWidth+'px';
+          if(window.map)setTimeout(()=>map.invalidateSize(),140);
+        }
+        resizer.addEventListener('mousedown',function(e){
+          isDragging=true; lastPageX=e.pageX; lastWidth=sidebar.offsetWidth;
+          document.body.style.cursor='ew-resize';
+          document.addEventListener('mousemove',mouseMoveHandler);
+          document.addEventListener('mouseup',function mouseUpHandler(){
+            isDragging=false;document.body.style.cursor='';
+            document.removeEventListener('mousemove',mouseMoveHandler);
+            document.removeEventListener('mouseup',mouseUpHandler);
+            if(window.map)setTimeout(()=>map.invalidateSize(),160);
+          });
+        });
+        window.addEventListener('resize',()=>{if(window.map)setTimeout(()=>map.invalidateSize(),200);});
+      }
+      function startIncidentGeneration(){
+        stopIncidentGeneration();
+        incidentInterval=setInterval(randomIncident,10000);
+      }
+      function stopIncidentGeneration(){
+        if(incidentInterval)clearInterval(incidentInterval);
+        incidentInterval=null;
+      }
+      window.addEventListener('beforeunload',stopIncidentGeneration);
+      function mainInit(){
+        loadState(); initDragSidebarResizer();
+        saveAndRender(); startIncidentGeneration();
+        window.addEventListener('resize',()=>{if(window.map)setTimeout(()=>map.invalidateSize(),200);});
+      }
+      window.onload=mainInit;
+      return {
+        changeResource, addTeamManually, manualDeploy, toggleSidebar
+      };
+    })();
+  </script>
+</body>
+</html>
